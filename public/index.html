@@ -1,0 +1,279 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Foodie - Online Food Delivery</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f6f7fb;color:#24243b}
+header{background:white;padding:20px 7%;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 10px #0001}
+.logo{font-size:26px;font-weight:bold;color:#f15a35}
+.hero{width:86%;margin:30px auto;padding:40px;border-radius:20px;color:white;background:linear-gradient(120deg,#f15a35,#ffad65)}
+.hero h1{font-size:36px}
+input{padding:13px;border:1px solid #ddd;border-radius:8px;font-size:15px;max-width:100%}
+.hero input{width:320px;border:none}
+button{padding:12px 16px;border:0;border-radius:8px;background:#f15a35;color:white;font-weight:bold;cursor:pointer}
+button:hover{opacity:.85}
+.secondary{background:#292f48}
+main{width:86%;margin:auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px}
+.card{background:white;padding:22px;border-radius:15px;box-shadow:0 5px 20px #00000009}
+.food{font-size:40px}
+.muted{color:#777;font-size:14px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:15px}
+.menu-item{padding:14px 0;border-bottom:1px solid #eee}
+.status{display:inline-block;padding:8px 12px;border-radius:20px;background:#e0f7e8;color:#18733b;font-weight:bold}
+#message{margin:20px 0;font-weight:bold}
+footer{text-align:center;padding:30px;color:#777}
+@media(max-width:600px){.hero,main{width:92%}.hero{padding:25px}.hero h1{font-size:28px}header{padding:18px 4%}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🍕 Foodie</div>
+  <span>ONLINE FOOD DELIVERY | LLD DEMO</span>
+</header>
+
+<section class="hero">
+  <h1>Good food, good mood!</h1>
+  <p>Discover restaurants and order your favourite food.</p>
+  <input id="search" placeholder="Search pizza or burger">
+  <button onclick="loadRestaurants()">Search</button>
+</section>
+
+<main>
+  <h2>Restaurants</h2>
+  <div id="restaurants" class="grid"></div>
+
+  <section id="menuSection" hidden>
+    <h2 id="menuTitle">Food Menu</h2>
+    <div id="menu" class="grid"></div>
+  </section>
+
+  <section class="card" style="margin-top:28px">
+    <h2>🛒 Your Order</h2>
+    <div id="cart"><p class="muted">Add food items to begin.</p></div>
+    <div class="row">
+      <strong id="total">Total: ₹0</strong>
+      <button onclick="placeOrder()">Place Order</button>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:24px">
+    <h2>📦 Track Your Order</h2>
+    <p class="muted">Enter your order ID to check status.</p>
+    <div class="row">
+      <input id="orderId" type="number" min="1" placeholder="Order ID">
+      <button class="secondary" onclick="trackOrder()">Track Status</button>
+      <button onclick="cancelOrder()">Cancel Order</button>
+    </div>
+    <div id="tracking" style="margin-top:18px"></div>
+  </section>
+
+  <div id="message"></div>
+</main>
+
+<footer>Foodie LLD Demo | REST APIs | Node.js | Express.js</footer>
+
+<script>
+const API = "/api";
+let selectedRestaurant = null;
+let cart = [];
+let currentOrderId = null;
+const $ = id => document.getElementById(id);
+
+async function request(url, options = {}) {
+  const response = await fetch(API + url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    }
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || "Request failed");
+  return data;
+}
+
+function notify(message, error = false) {
+  $("message").textContent = message;
+  $("message").style.color = error ? "#c62828" : "#18733b";
+}
+
+async function loadRestaurants() {
+  try {
+    const search = encodeURIComponent($("search").value.trim());
+    const data = await request("/restaurants?search=" + search);
+    $("restaurants").innerHTML = "";
+
+    if (!data.length) {
+      $("restaurants").textContent = "No restaurants found.";
+      return;
+    }
+
+    data.forEach(r => {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `<div class="food">🍽️</div>
+        <h3>${r.name}</h3><p class="muted">${r.cuisine} Restaurant</p>`;
+      const button = document.createElement("button");
+      button.textContent = "View Menu →";
+      button.onclick = () => showMenu(r.id);
+      card.appendChild(button);
+      $("restaurants").appendChild(card);
+    });
+    notify("Restaurants loaded successfully.");
+  } catch (e) {
+    notify(e.message, true);
+  }
+}
+
+async function showMenu(id) {
+  try {
+    const restaurants = await request("/restaurants");
+    selectedRestaurant = restaurants.find(r => r.id === id);
+    if (!selectedRestaurant) throw new Error("Restaurant not found");
+
+    const menu = await request(`/restaurants/${id}/menu`);
+    $("menuTitle").textContent = selectedRestaurant.name + " - Menu";
+    $("menuSection").hidden = false;
+    $("menu").innerHTML = "";
+
+    menu.forEach(item => {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `<div class="food">🍕</div>
+        <h3>${item.name}</h3><strong>₹${item.price}</strong>`;
+
+      const button = document.createElement("button");
+      button.textContent = "Add +";
+      button.style.marginLeft = "12px";
+      button.onclick = () => addToCart(item.itemId, item.price, item.name);
+      card.appendChild(button);
+      $("menu").appendChild(card);
+    });
+
+    notify("Menu loaded successfully.");
+    $("menuSection").scrollIntoView({behavior:"smooth"});
+  } catch (e) {
+    notify(e.message, true);
+  }
+}
+
+function addToCart(itemId, price, name) {
+  if (cart.length && cart[0].restaurantId !== selectedRestaurant.id) {
+    notify("Finish your current order before changing restaurants.", true);
+    return;
+  }
+
+  const item = cart.find(i => i.itemId === itemId);
+  if (item) item.quantity++;
+  else cart.push({itemId,price,name,quantity:1,restaurantId:selectedRestaurant.id});
+
+  renderCart();
+  notify(name + " added to your order.");
+}
+
+function renderCart() {
+  $("cart").innerHTML = "";
+  if (!cart.length) $("cart").innerHTML = '<p class="muted">Your order is empty.</p>';
+
+  cart.forEach(item => {
+    const div = document.createElement("div");
+    div.className = "menu-item";
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<span>${item.name} × ${item.quantity}</span>
+      <strong>₹${item.price * item.quantity}</strong>`;
+
+    const button = document.createElement("button");
+    button.className = "secondary";
+    button.textContent = "Remove";
+    button.onclick = () => removeItem(item.itemId);
+    div.append(row, button);
+    $("cart").appendChild(div);
+  });
+
+  $("total").textContent = "Total: ₹" +
+    cart.reduce((sum,i) => sum + i.price * i.quantity, 0);
+}
+
+function removeItem(id) {
+  cart = cart.filter(i => i.itemId !== id);
+  renderCart();
+}
+
+async function placeOrder() {
+  if (!cart.length) return notify("Please add food items first.", true);
+
+  try {
+    const order = await request("/orders", {
+      method:"POST",
+      body:JSON.stringify({
+        customerId:101,
+        restaurantId:cart[0].restaurantId,
+        items:cart.map(i => ({itemId:i.itemId,quantity:i.quantity})),
+        paymentMethod:"UPI"
+      })
+    });
+
+    currentOrderId = order.orderId;
+    $("orderId").value = order.orderId;
+    cart = [];
+    renderCart();
+    notify(`Order #${order.orderId} placed successfully. Total: ₹${order.totalAmount}`);
+    await trackOrder();
+  } catch(e) {
+    notify(e.message, true);
+  }
+}
+
+async function trackOrder() {
+  const id = $("orderId").value || currentOrderId;
+  if (!id) return notify("Enter an order ID first.", true);
+
+  try {
+    const order = await request(`/orders/${id}/status`);
+    $("tracking").innerHTML = "";
+    const p = document.createElement("p");
+    p.textContent = "Order ID: #" + order.orderId;
+    const status = document.createElement("span");
+    status.className = "status";
+    status.textContent = order.status;
+    $("tracking").append(p,status);
+    notify("Order status retrieved successfully.");
+  } catch(e) {
+    notify(e.message,true);
+  }
+}
+
+async function cancelOrder() {
+  const id = $("orderId").value || currentOrderId;
+  if (!id) return notify("Enter an order ID first.", true);
+
+  try {
+    const result = await request(`/orders/${id}/cancel`, {
+      method:"POST",
+      body:JSON.stringify({reason:"Customer requested cancellation"})
+    });
+
+    $("tracking").innerHTML = "";
+    const p = document.createElement("p");
+    p.textContent = "Order ID: #" + result.orderId;
+    const status = document.createElement("span");
+    status.className = "status";
+    status.textContent = result.status;
+    $("tracking").append(p,status);
+    notify(result.message);
+  } catch(e) {
+    notify(e.message,true);
+  }
+}
+
+loadRestaurants();
+</script>
+</body>
+</html>
